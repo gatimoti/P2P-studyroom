@@ -3,15 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>P2P リアルタイムワークスペース</title>
-  <!-- Tailwind CSS & FontAwesome Icons -->
+  <title>P2P リアルタイム StudyRoom</title>
+  <!-- Tailwind CSS & FontAwesome -->
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <!-- PeerJS (インターネット接続用ライブラリ) -->
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <!-- 安定版 PeerJS CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
 
   <style>
-    /* カスタムスクロールバー */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #111827; }
     ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
@@ -21,23 +20,21 @@
 </head>
 <body class="bg-gray-950 text-gray-100 h-screen w-screen overflow-hidden flex flex-col font-sans select-none">
 
-  <!-- ==================== 1. タイトル & モーダル画面 ==================== -->
+  <!-- 1. タイトル & モーダル画面 -->
   <div id="screen-title" class="fixed inset-0 z-50 bg-gray-950 flex flex-col items-center justify-center p-4">
     <div class="max-w-md w-full bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl text-center">
       <div class="inline-flex items-center justify-center w-16 h-16 bg-blue-600/20 text-blue-500 rounded-2xl mb-4 border border-blue-500/30">
         <i class="fa-solid fa-headset text-3xl"></i>
       </div>
-      <h1 class="text-2xl font-bold tracking-wide text-white mb-2">P2P Voice & Chat</h1>
+      <h1 class="text-2xl font-bold tracking-wide text-white mb-2">P2P StudyRoom</h1>
       <p class="text-gray-400 text-sm mb-8">一時的な音声通話・チャット・画面共有</p>
 
       <div class="space-y-4">
         <button onclick="openNameModal('host')" class="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg transition duration-200 flex items-center justify-center gap-3">
-          <i class="fa-solid fa-plus-circle text-lg"></i>
-          部屋を作る
+          <i class="fa-solid fa-plus-circle text-lg"></i> 部屋を作る
         </button>
         <button onclick="openNameModal('guest')" class="w-full py-4 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 font-bold rounded-xl shadow-lg transition duration-200 flex items-center justify-center gap-3">
-          <i class="fa-solid fa-right-to-bracket text-lg"></i>
-          部屋に参加
+          <i class="fa-solid fa-right-to-bracket text-lg"></i> 部屋に参加
         </button>
       </div>
     </div>
@@ -61,7 +58,7 @@
 
         <div id="error-message" class="hidden text-red-400 text-xs bg-red-950/50 border border-red-900/50 p-3 rounded-lg flex items-center gap-2">
           <i class="fa-solid fa-circle-exclamation"></i>
-          <span id="error-text">不適切な言葉が含まれています。</span>
+          <span id="error-text">エラーが発生しました。</span>
         </div>
       </div>
 
@@ -72,7 +69,7 @@
     </div>
   </div>
 
-  <!-- ==================== 2. メインアプリ画面 ==================== -->
+  <!-- 2. メインアプリ画面 -->
   <div id="screen-app" class="hidden flex-1 flex flex-col h-full w-full overflow-hidden">
     
     <!-- ヘッダーバー -->
@@ -93,39 +90,30 @@
       </button>
     </header>
 
-    <!-- メインコンテンツ領域 -->
+    <!-- メインエリア -->
     <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
       
-      <!-- 左側/上部：参加者グリッド & 画面共有エリア -->
+      <!-- グリッド & 画面共有 -->
       <div class="flex-1 p-4 bg-gray-950 flex flex-col gap-4 overflow-y-auto">
-        <!-- 画面共有ビデオ -->
         <div id="screenshare-container" class="hidden relative bg-black rounded-2xl overflow-hidden border border-gray-800 shadow-2xl flex-1 min-h-[240px]">
           <video id="screen-video" autoplay playsinline class="w-full h-full object-contain"></video>
           <div class="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs text-blue-400 border border-blue-500/30 flex items-center gap-2">
             <i class="fa-solid fa-desktop"></i>
-            <span id="screenshare-user-name">画面共有中</span>
+            <span>画面共有中</span>
           </div>
         </div>
 
-        <!-- 参加者アバターグリッド -->
-        <div id="user-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-          <!-- 参加者カードが JavaScript でここに動的追加されます -->
-        </div>
+        <div id="user-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3"></div>
       </div>
 
-      <!-- 右側/下部：チャットエリア (固定サイズ & 独立スクロール) -->
+      <!-- チャットパネル -->
       <div class="w-full md:w-80 lg:w-96 bg-gray-900 border-t md:border-t-0 md:border-l border-gray-800 flex flex-col h-64 md:h-full shrink-0">
-        
         <div class="px-4 py-3 border-b border-gray-800 flex items-center gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
           <i class="fa-solid fa-comments"></i> リアルタイムチャット
         </div>
 
-        <!-- メッセージ一覧 (自動スクロール) -->
-        <div id="chat-messages" class="flex-1 p-4 overflow-y-auto space-y-4">
-          <!-- メッセージバブルがここに追加されます -->
-        </div>
+        <div id="chat-messages" class="flex-1 p-4 overflow-y-auto space-y-4"></div>
 
-        <!-- チャット入力欄 -->
         <div class="p-3 bg-gray-950 border-t border-gray-800 shrink-0">
           <div class="flex items-center gap-2">
             <label class="p-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl cursor-pointer transition flex items-center justify-center">
@@ -138,12 +126,11 @@
             </button>
           </div>
         </div>
-
       </div>
 
     </div>
 
-    <!-- フッターコントロールバー -->
+    <!-- フッター -->
     <footer class="h-16 bg-gray-900 border-t border-gray-800 px-4 flex items-center justify-center gap-4 shrink-0">
       <button id="btn-mic" onclick="toggleMic()" class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white font-medium text-sm rounded-xl transition border border-gray-700 flex items-center gap-2">
         <i class="fa-solid fa-microphone"></i>
@@ -158,23 +145,21 @@
 
   </div>
 
-  <!-- JavaScript ロジック -->
   <script>
-    // NGワードリスト (不適切表現・暴言チェック)
     const NG_WORDS = ["しね", "バカ", "アホ", "死ね", "殺す", "キモい", "fuck", "shit", "bitch"];
+    const PEER_PREFIX = "GATIMOTI-STUDYROOM-";
 
     let peer = null;
     let roomCode = "";
     let myName = "";
-    let mode = ""; // 'host' または 'guest'
+    let mode = "";
     let isMicOn = false;
     let isScreenSharing = false;
     let localAudioStream = null;
     let screenStream = null;
 
-    // データチャネル・音声ストリームの管理オブジェクト
-    const connections = {}; // { peerId: { conn, call, name } }
-    const participants = {}; // { peerId: { name, isHost } }
+    const connections = {}; 
+    const participants = {}; 
 
     function openNameModal(selectedMode) {
       mode = selectedMode;
@@ -224,7 +209,7 @@
 
       if (mode === 'host') {
         roomCode = generateCode();
-        initPeer(roomCode, true);
+        initPeer(PEER_PREFIX + roomCode, true);
       } else {
         const codeInput = document.getElementById('input-room-code').value.trim().toUpperCase();
         if (codeInput.length !== 5) {
@@ -237,35 +222,32 @@
       }
     }
 
-    // PeerJS の初期化
     function initPeer(customId, isHost) {
       closeModal();
-      
-      // PeerJS Cloud サーバー接続
       peer = customId ? new Peer(customId) : new Peer();
 
       peer.on('open', (id) => {
-        if (!isHost) {
-          // ゲスト側はホストへ接続
-          connectToHost(roomCode);
-        } else {
-          // ホスト自身を参加者一覧に追加
-          addParticipant(peer.id, myName, true);
-        }
+        addParticipant(peer.id, myName, isHost);
         startAppUI();
+
+        if (!isHost) {
+          connectToHost(PEER_PREFIX + roomCode);
+        }
       });
 
       peer.on('error', (err) => {
-        alert("接続エラーが発生しました: " + err.type);
         console.error(err);
+        if (err.type === 'unavailable-id') {
+          alert("そのコードの部屋は既に存在するか接続できません。");
+        } else {
+          alert("通信エラーが発生しました: " + err.type);
+        }
       });
 
-      // 他端末からのデータチャネル接続の受信用
       peer.on('connection', (conn) => {
         setupDataConnection(conn);
       });
 
-      // 音声/画面共有ストリーム受信用
       peer.on('call', (call) => {
         call.answer(localAudioStream);
         setupMediaCall(call);
@@ -279,23 +261,19 @@
       document.getElementById('my-name-tag').innerText = myName;
     }
 
-    function connectToHost(hostId) {
-      const conn = peer.connect(hostId, { metadata: { name: myName } });
+    function connectToHost(targetPeerId) {
+      const conn = peer.connect(targetPeerId, { metadata: { name: myName } });
       setupDataConnection(conn);
-
-      if (localAudioStream) {
-        const call = peer.call(hostId, localAudioStream);
-        setupMediaCall(call);
-      }
     }
 
     function setupDataConnection(conn) {
       conn.on('open', () => {
-        connections[conn.peer] = connections[conn.peer] || {};
-        connections[conn.peer].conn = conn;
+        connections[conn.peer] = conn;
+        conn.send({ type: 'join-info', name: myName, peerId: peer.id });
 
-        // 自分の名前情報を相手に送信
-        conn.send({ type: 'join-info', name: myName });
+        if (localAudioStream) {
+          peer.call(conn.peer, localAudioStream);
+        }
       });
 
       conn.on('data', (data) => {
@@ -309,7 +287,6 @@
 
     function setupMediaCall(call) {
       call.on('stream', (remoteStream) => {
-        // リモート音声プレイヤー作成
         let audioEl = document.getElementById(`audio-${call.peer}`);
         if (!audioEl) {
           audioEl = document.createElement('audio');
@@ -321,13 +298,13 @@
       });
     }
 
-    function handleIncomingData(peerId, data) {
+    function handleIncomingData(fromPeerId, data) {
       if (data.type === 'join-info') {
-        addParticipant(peerId, data.name, false);
+        addParticipant(fromPeerId, data.name, false);
       } else if (data.type === 'chat') {
         renderChatMessage(data.name, data.message, false, data.file);
       } else if (data.type === 'leave') {
-        removeParticipant(peerId);
+        removeParticipant(fromPeerId);
       }
     }
 
@@ -365,14 +342,13 @@
       });
     }
 
-    // チャットメッセージ送信機能
     function sendMessage() {
       const input = document.getElementById('chat-input');
       const text = input.value.trim();
       if (!text) return;
 
       if (containsNGWords(text)) {
-        alert("メッセージに不適切な言葉が含まれています。");
+        alert("不適切な表現が含まれています。");
         return;
       }
 
@@ -381,23 +357,18 @@
       input.value = '';
     }
 
-    // ファイル（画像・動画・音楽）の送信
     function handleFileUpload(event) {
       const file = event.target.files[0];
       if (!file) return;
 
-      if (file.size > 10 * 1024 * 1024) { // 10MB制限
-        alert("10MB以下のファイルのみ送信可能です。");
+      if (file.size > 5 * 1024 * 1024) {
+        alert("ファイルサイズは5MB以下にしてください。");
         return;
       }
 
       const reader = new FileReader();
       reader.onload = function(e) {
-        const fileData = {
-          name: file.name,
-          type: file.type,
-          data: e.target.result
-        };
+        const fileData = { name: file.name, type: file.type, data: e.target.result };
         broadcastData({ type: 'chat', name: myName, message: '', file: fileData });
         renderChatMessage(myName, '', true, fileData);
       };
@@ -406,8 +377,8 @@
 
     function broadcastData(data) {
       Object.keys(connections).forEach(peerId => {
-        if (connections[peerId].conn && connections[peerId].conn.open) {
-          connections[peerId].conn.send(data);
+        if (connections[peerId] && connections[peerId].open) {
+          connections[peerId].send(data);
         }
       });
     }
@@ -446,7 +417,6 @@
       });
     }
 
-    // マイクのON/OFF
     async function toggleMic() {
       const btn = document.getElementById('btn-mic');
       if (!isMicOn) {
@@ -456,12 +426,11 @@
           btn.classList.replace('bg-gray-800', 'bg-emerald-600');
           btn.querySelector('span').innerText = "マイク ON";
 
-          // 他の参加者へストリームをコール
           Object.keys(connections).forEach(peerId => {
             peer.call(peerId, localAudioStream);
           });
         } catch (err) {
-          alert("マイクの取得に失敗しました。");
+          alert("マイクの利用許可が得られませんでした。");
         }
       } else {
         if (localAudioStream) {
@@ -473,7 +442,6 @@
       }
     }
 
-    // 画面共有
     async function toggleScreenShare() {
       const container = document.getElementById('screenshare-container');
       const video = document.getElementById('screen-video');
@@ -489,7 +457,7 @@
             toggleScreenShare();
           };
         } catch (err) {
-          console.log("画面共有がキャンセルされました");
+          console.log("画面共有キャンセル");
         }
       } else {
         if (screenStream) {
@@ -502,7 +470,7 @@
 
     function copyRoomCode() {
       navigator.clipboard.writeText(roomCode);
-        alert(`部屋コード "${roomCode}" をコピーしました！`);
+      alert(`部屋コード "${roomCode}" をコピーしました！`);
     }
 
     function leaveRoom() {
