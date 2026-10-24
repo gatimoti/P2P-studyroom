@@ -152,7 +152,7 @@
     let peer = null;
     let roomCode = "";
     let myName = "";
-    let mode = "";
+    let isHost = false;
     let isMicOn = false;
     let isScreenSharing = false;
     let localAudioStream = null;
@@ -160,11 +160,12 @@
 
     const connections = {}; 
     const participants = {}; 
+    const chatHistory = []; // チャット履歴保持用配列
 
     function openNameModal(selectedMode) {
-      mode = selectedMode;
-      document.getElementById('modal-title').innerText = mode === 'host' ? '部屋を作る' : '部屋に参加';
-      document.getElementById('container-room-code').style.display = mode === 'guest' ? 'block' : 'none';
+      isHost = (selectedMode === 'host');
+      document.getElementById('modal-title').innerText = isHost ? '部屋を作る' : '部屋に参加';
+      document.getElementById('container-room-code').style.display = isHost ? 'none' : 'block';
       document.getElementById('modal-name').classList.remove('hidden');
       document.getElementById('error-message').classList.add('hidden');
     }
@@ -207,9 +208,9 @@
 
       myName = nameInput;
 
-      if (mode === 'host') {
+      if (isHost) {
         roomCode = generateCode();
-        initPeer(PEER_PREFIX + roomCode, true);
+        initPeer(PEER_PREFIX + roomCode);
       } else {
         const codeInput = document.getElementById('input-room-code').value.trim().toUpperCase();
         if (codeInput.length !== 5) {
@@ -218,11 +219,11 @@
           return;
         }
         roomCode = codeInput;
-        initPeer(null, false);
+        initPeer(null);
       }
     }
 
-    function initPeer(customId, isHost) {
+    function initPeer(customId) {
       closeModal();
       peer = customId ? new Peer(customId) : new Peer();
 
@@ -269,7 +270,18 @@
     function setupDataConnection(conn) {
       conn.on('open', () => {
         connections[conn.peer] = conn;
-        conn.send({ type: 'join-info', name: myName, peerId: peer.id });
+
+        // 相手に自分の名前とホストフラグを送信
+        conn.send({ type: 'join-info', name: myName, peerId: peer.id, isHost: isHost });
+
+        // ホスト側は、新規参加のゲストに対してこれまでのチャット履歴と全メンバー情報を即座に同期
+        if (isHost) {
+          conn.send({
+            type: 'sync-history',
+            chatHistory: chatHistory,
+            participants: participants
+          });
+        }
 
         if (localAudioStream) {
           peer.call(conn.peer, localAudioStream);
@@ -300,16 +312,52 @@
 
     function handleIncomingData(fromPeerId, data) {
       if (data.type === 'join-info') {
-        addParticipant(fromPeerId, data.name, false);
+        addParticipant(fromPeerId, data.name, data.isHost);
+
+        // ホストが受信した場合、新メンバー参加情報を他の全員にリレーして通知
+        if (isHost) {
+          broadcastData({
+            type: 'participant-joined',
+            peerId: fromPeerId,
+            name: data.name,
+            isHost: data.isHost
+          }, fromPeerId);
+        }
+      } else if (data.type === 'participant-joined') {
+        addParticipant(data.peerId, data.name, data.isHost);
+      } else if (data.type === 'sync-history') {
+        // 後から入ったゲストが過去ログとメンバーリストを一括受信
+        if (data.participants) {
+          Object.assign(participants, data.participants);
+          renderUserGrid();
+        }
+        if (data.chatHistory && data.chatHistory.length > 0) {
+          data.chatHistory.forEach(item => {
+            const isMe = item.senderId === peer.id;
+            renderChatMessage(item.name, item.message, isMe, item.file);
+            chatHistory.push(item);
+          });
+        }
       } else if (data.type === 'chat') {
-        renderChatMessage(data.name, data.message, false, data.file);
+        // メッセージのレンダリング＆履歴追加
+        const isMe = data.senderId === peer.id;
+        renderChatMessage(data.name, data.message, isMe, data.file);
+        chatHistory.push(data);
+
+        // ホストが受信した場合、差出人以外の全接続先ゲストへ転送（メッシュリレー）
+        if (isHost) {
+          broadcastData(data, fromPeerId);
+        }
       } else if (data.type === 'leave') {
         removeParticipant(fromPeerId);
+        if (isHost) {
+          broadcastData({ type: 'leave', peerId: fromPeerId }, fromPeerId);
+        }
       }
     }
 
-    function addParticipant(peerId, name, isHost) {
-      participants[peerId] = { name, isHost };
+    function addParticipant(peerId, name, hostFlag) {
+      participants[peerId] = { name: name, isHost: hostFlag };
       renderUserGrid();
     }
 
@@ -352,8 +400,17 @@
         return;
       }
 
-      broadcastData({ type: 'chat', name: myName, message: text });
+      const msgObj = {
+        type: 'chat',
+        senderId: peer.id,
+        name: myName,
+        message: text,
+        file: null
+      };
+
+      chatHistory.push(msgObj);
       renderChatMessage(myName, text, true);
+      broadcastData(msgObj);
       input.value = '';
     }
 
@@ -361,23 +418,33 @@
       const file = event.target.files[0];
       if (!file) return;
 
-      if (file.size > 5 * 1024 * 1024) {
-        alert("ファイルサイズは5MB以下にしてください。");
+      if (file.size > 3 * 1024 * 1024) { // 3MB制限
+        alert("ファイルサイズは3MB以下にしてください。");
         return;
       }
 
       const reader = new FileReader();
       reader.onload = function(e) {
         const fileData = { name: file.name, type: file.type, data: e.target.result };
-        broadcastData({ type: 'chat', name: myName, message: '', file: fileData });
+        const msgObj = {
+          type: 'chat',
+          senderId: peer.id,
+          name: myName,
+          message: '',
+          file: fileData
+        };
+
+        chatHistory.push(msgObj);
         renderChatMessage(myName, '', true, fileData);
+        broadcastData(msgObj);
       };
       reader.readAsDataURL(file);
     }
 
-    function broadcastData(data) {
+    // 全接続者へのメッセージ一斉送信（特定ピアの除外可能）
+    function broadcastData(data, excludePeerId = null) {
       Object.keys(connections).forEach(peerId => {
-        if (connections[peerId] && connections[peerId].open) {
+        if (peerId !== excludePeerId && connections[peerId] && connections[peerId].open) {
           connections[peerId].send(data);
         }
       });
