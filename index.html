@@ -93,17 +93,22 @@
     <!-- メインエリア -->
     <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
       
-      <!-- グリッド & 画面共有 -->
-      <div class="flex-1 p-4 bg-gray-950 flex flex-col gap-4 overflow-y-auto">
-        <div id="screenshare-container" class="hidden relative bg-black rounded-2xl overflow-hidden border border-gray-800 shadow-2xl flex-1 min-h-[240px]">
-          <video id="screen-video" autoplay playsinline class="w-full h-full object-contain"></video>
-          <div class="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full text-xs text-blue-400 border border-blue-500/30 flex items-center gap-2">
-            <i class="fa-solid fa-desktop"></i>
-            <span>画面共有中</span>
-          </div>
+      <!-- 画面共有 ＆ 参加者グリッド（スクロール可能） -->
+      <div class="flex-1 p-4 bg-gray-950 flex flex-col gap-6 overflow-y-auto">
+        
+        <!-- 画面共有グリッドエリア（全員の画面共有がここに縦並び/グリッドで追加されます） -->
+        <div id="screenshare-grid" class="hidden flex flex-col gap-4">
+          <!-- 画面共有コンテナがここに動的に追加されます -->
         </div>
 
-        <div id="user-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3"></div>
+        <!-- 参加者アバター一覧 -->
+        <div>
+          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <i class="fa-solid fa-users"></i> 参加メンバー
+          </h3>
+          <div id="user-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3"></div>
+        </div>
+
       </div>
 
       <!-- チャットパネル -->
@@ -160,7 +165,8 @@
 
     const connections = {}; 
     const participants = {}; 
-    const chatHistory = []; // チャット履歴保持用配列
+    const mediaCalls = {}; // 画面共有/音声通話用Call管理
+    const chatHistory = []; 
 
     function openNameModal(selectedMode) {
       isHost = (selectedMode === 'host');
@@ -250,8 +256,8 @@
       });
 
       peer.on('call', (call) => {
-        call.answer(localAudioStream);
-        setupMediaCall(call);
+        call.answer();
+        setupIncomingMediaCall(call);
       });
     }
 
@@ -271,20 +277,14 @@
       conn.on('open', () => {
         connections[conn.peer] = conn;
 
-        // 相手に自分の名前とホストフラグを送信
         conn.send({ type: 'join-info', name: myName, peerId: peer.id, isHost: isHost });
 
-        // ホスト側は、新規参加のゲストに対してこれまでのチャット履歴と全メンバー情報を即座に同期
         if (isHost) {
           conn.send({
             type: 'sync-history',
             chatHistory: chatHistory,
             participants: participants
           });
-        }
-
-        if (localAudioStream) {
-          peer.call(conn.peer, localAudioStream);
         }
       });
 
@@ -297,16 +297,28 @@
       });
     }
 
-    function setupMediaCall(call) {
+    function setupIncomingMediaCall(call) {
       call.on('stream', (remoteStream) => {
-        let audioEl = document.getElementById(`audio-${call.peer}`);
-        if (!audioEl) {
-          audioEl = document.createElement('audio');
-          audioEl.id = `audio-${call.peer}`;
-          audioEl.autoplay = true;
-          document.body.appendChild(audioEl);
+        const metadata = call.metadata || {};
+
+        if (metadata.type === 'screen') {
+          // 画面共有ストリーム受信
+          addScreenShareView(call.peer, metadata.name || '参加者', remoteStream);
+        } else {
+          // 音声ストリーム受信
+          let audioEl = document.getElementById(`audio-${call.peer}`);
+          if (!audioEl) {
+            audioEl = document.createElement('audio');
+            audioEl.id = `audio-${call.peer}`;
+            audioEl.autoplay = true;
+            document.body.appendChild(audioEl);
+          }
+          audioEl.srcObject = remoteStream;
         }
-        audioEl.srcObject = remoteStream;
+      });
+
+      call.on('close', () => {
+        removeScreenShareView(call.peer);
       });
     }
 
@@ -314,7 +326,6 @@
       if (data.type === 'join-info') {
         addParticipant(fromPeerId, data.name, data.isHost);
 
-        // ホストが受信した場合、新メンバー参加情報を他の全員にリレーして通知
         if (isHost) {
           broadcastData({
             type: 'participant-joined',
@@ -326,7 +337,6 @@
       } else if (data.type === 'participant-joined') {
         addParticipant(data.peerId, data.name, data.isHost);
       } else if (data.type === 'sync-history') {
-        // 後から入ったゲストが過去ログとメンバーリストを一括受信
         if (data.participants) {
           Object.assign(participants, data.participants);
           renderUserGrid();
@@ -339,12 +349,10 @@
           });
         }
       } else if (data.type === 'chat') {
-        // メッセージのレンダリング＆履歴追加
         const isMe = data.senderId === peer.id;
         renderChatMessage(data.name, data.message, isMe, data.file);
         chatHistory.push(data);
 
-        // ホストが受信した場合、差出人以外の全接続先ゲストへ転送（メッシュリレー）
         if (isHost) {
           broadcastData(data, fromPeerId);
         }
@@ -366,6 +374,7 @@
       delete connections[peerId];
       const audioEl = document.getElementById(`audio-${peerId}`);
       if (audioEl) audioEl.remove();
+      removeScreenShareView(peerId);
       renderUserGrid();
     }
 
@@ -388,6 +397,41 @@
         `;
         grid.appendChild(card);
       });
+    }
+
+    // 画面共有ビューの追加（複数人同時対応）
+    function addScreenShareView(peerId, userName, stream) {
+      const grid = document.getElementById('screenshare-grid');
+      grid.classList.remove('hidden');
+
+      let container = document.getElementById(`screen-container-${peerId}`);
+      if (!container) {
+        container = document.createElement('div');
+        container.id = `screen-container-${peerId}`;
+        container.className = "relative bg-black rounded-2xl overflow-hidden border border-gray-800 shadow-2xl w-full min-h-[300px] max-h-[500px] flex items-center justify-center";
+
+        container.innerHTML = `
+          <video id="video-${peerId}" autoplay playsinline class="w-full h-full object-contain"></video>
+          <div class="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-full text-xs text-blue-400 border border-blue-500/30 flex items-center gap-2 shadow-md">
+            <i class="fa-solid fa-desktop"></i>
+            <span>${userName} の画面</span>
+          </div>
+        `;
+        grid.appendChild(container);
+      }
+
+      const video = document.getElementById(`video-${peerId}`);
+      video.srcObject = stream;
+    }
+
+    function removeScreenShareView(peerId) {
+      const container = document.getElementById(`screen-container-${peerId}`);
+      if (container) container.remove();
+
+      const grid = document.getElementById('screenshare-grid');
+      if (grid.children.length === 0) {
+        grid.classList.add('hidden');
+      }
     }
 
     function sendMessage() {
@@ -418,7 +462,7 @@
       const file = event.target.files[0];
       if (!file) return;
 
-      if (file.size > 3 * 1024 * 1024) { // 3MB制限
+      if (file.size > 3 * 1024 * 1024) {
         alert("ファイルサイズは3MB以下にしてください。");
         return;
       }
@@ -441,7 +485,6 @@
       reader.readAsDataURL(file);
     }
 
-    // 全接続者へのメッセージ一斉送信（特定ピアの除外可能）
     function broadcastData(data, excludePeerId = null) {
       Object.keys(connections).forEach(peerId => {
         if (peerId !== excludePeerId && connections[peerId] && connections[peerId].open) {
@@ -494,7 +537,7 @@
           btn.querySelector('span').innerText = "マイク ON";
 
           Object.keys(connections).forEach(peerId => {
-            peer.call(peerId, localAudioStream);
+            peer.call(peerId, localAudioStream, { metadata: { type: 'audio', name: myName } });
           });
         } catch (err) {
           alert("マイクの利用許可が得られませんでした。");
@@ -509,30 +552,44 @@
       }
     }
 
+    // 画面共有の切り替え（全員同時画面共有対応）
     async function toggleScreenShare() {
-      const container = document.getElementById('screenshare-container');
-      const video = document.getElementById('screen-video');
+      const btn = document.getElementById('btn-screen');
 
       if (!isScreenSharing) {
         try {
           screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-          video.srcObject = screenStream;
-          container.classList.remove('hidden');
           isScreenSharing = true;
+          btn.classList.replace('bg-gray-800', 'bg-blue-600');
 
+          // 自分のローカル画面にプレビュー追加
+          addScreenShareView(peer.id, myName + " (あなた)", screenStream);
+
+          // 接続中の全員に自分の画面共有ストリームを発信
+          Object.keys(connections).forEach(peerId => {
+            peer.call(peerId, screenStream, { metadata: { type: 'screen', name: myName } });
+          });
+
+          // ブラウザ側の「共有停止」ボタンが押された時の処理
           screenStream.getVideoTracks()[0].onended = () => {
-            toggleScreenShare();
+            stopScreenShare();
           };
         } catch (err) {
-          console.log("画面共有キャンセル");
+          console.log("画面共有がキャンセルされました");
         }
       } else {
-        if (screenStream) {
-          screenStream.getTracks().forEach(track => track.stop());
-        }
-        container.classList.add('hidden');
-        isScreenSharing = false;
+        stopScreenShare();
       }
+    }
+
+    function stopScreenShare() {
+      const btn = document.getElementById('btn-screen');
+      if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+      }
+      removeScreenShareView(peer.id);
+      isScreenSharing = false;
+      btn.classList.replace('bg-blue-600', 'bg-gray-800');
     }
 
     function copyRoomCode() {
